@@ -5,4 +5,4 @@ pages_build_output_dir = "./public"
 [[d1_databases]]
 binding = "DB"
 database_name = "daily-grid-hq-db"
-database_id = "REPLACE_ME"
+database_id = "1b5e2e4c-b4b3-4305-b19f-846d1413ce28"
