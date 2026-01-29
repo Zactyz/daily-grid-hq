@@ -26,6 +26,47 @@ export async function onRequestPatch({ request, env, params }) {
     binds.push(status);
   }
 
+  if (body.description != null) {
+    const description = body.description ? String(body.description).trim() : null;
+    updates.push('description = ?');
+    binds.push(description);
+  }
+
+  if (body.labels != null) {
+    const labels = body.labels ? JSON.stringify(Array.isArray(body.labels) ? body.labels : []) : null;
+    updates.push('labels = ?');
+    binds.push(labels);
+  }
+
+  if (body.dueDate != null) {
+    const dueDate = body.dueDate ? Math.floor(new Date(body.dueDate).getTime()) : null;
+    updates.push('due_date = ?');
+    binds.push(dueDate);
+  }
+
+  if (body.priority != null) {
+    const priority = body.priority || null;
+    if (priority && !['low', 'medium', 'high', 'urgent'].includes(priority)) {
+      return json({ error: 'invalid_priority' }, { status: 400 });
+    }
+    updates.push('priority = ?');
+    binds.push(priority);
+  }
+
+  if (body.archived != null) {
+    const archived = body.archived ? 1 : 0;
+    updates.push('archived = ?');
+    binds.push(archived);
+  }
+
+  if (body.sort != null) {
+    const sort = Number(body.sort);
+    if (!isNaN(sort)) {
+      updates.push('sort = ?');
+      binds.push(sort);
+    }
+  }
+
   if (updates.length === 0) return json({ error: 'no_updates' }, { status: 400 });
 
   updates.push('updated_at = ?');
