@@ -1,8 +1,33 @@
 import { json, nowMs, requireEmail } from '../_util.js';
 
+async function ensureCardsTable(env) {
+  // Safe no-op if already exists
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS cards (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('backlog','doing','blocked','done')),
+      sort INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      description TEXT,
+      labels TEXT,
+      due_date INTEGER,
+      archived INTEGER DEFAULT 0,
+      priority TEXT CHECK (priority IN ('low', 'medium', 'high', 'urgent'))
+    );`
+  ).run();
+
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_cards_status_sort ON cards(status, sort);').run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_cards_archived ON cards(archived);').run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_cards_due_date ON cards(due_date);').run();
+}
+
 export async function onRequestGet({ request, env }) {
   const auth = requireEmail(request, env);
   if (!auth.ok) return json({ error: 'unauthorized', reason: auth.reason }, { status: 401 });
+
+  await ensureCardsTable(env);
 
   const url = new URL(request.url);
   const includeArchived = url.searchParams.get('archived') === 'true';
@@ -41,6 +66,8 @@ export async function onRequestPost({ request, env }) {
   const auth = requireEmail(request, env);
   if (!auth.ok) return json({ error: 'unauthorized', reason: auth.reason }, { status: 401 });
 
+  await ensureCardsTable(env);
+
   const body = await request.json().catch(() => ({}));
   const title = String(body.title || '').trim();
   if (!title) return json({ error: 'title_required' }, { status: 400 });
@@ -71,6 +98,21 @@ export async function onRequestPost({ request, env }) {
   await env.DB.prepare(
     'INSERT INTO cards (id, title, status, sort, created_at, updated_at, description, labels, due_date, archived, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?);'
   ).bind(id, title, status, sort, now, now, description, labels, dueDate, priority).run();
+
+  // "Pick up" new tasks automatically by setting Friday's focus.
+  // This keeps the Status panel accurate without manual editing.
+  if (status === 'backlog' || status === 'doing') {
+    await env.DB.prepare(
+      'INSERT INTO friday_status (id, message, mode, focus_card_id, updated_at) VALUES (?, ?, ?, ?, ?)\n' +
+      'ON CONFLICT(id) DO UPDATE SET message=excluded.message, mode=excluded.mode, focus_card_id=excluded.focus_card_id, updated_at=excluded.updated_at;'
+    ).bind(
+      'singleton',
+      `Picked up: ${title}`,
+      'working',
+      id,
+      now
+    ).run();
+  }
 
   return json({ ok: true, id });
 }

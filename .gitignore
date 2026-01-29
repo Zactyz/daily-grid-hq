@@ -1,27 +1,6 @@
-# Dependencies
+.wrangler/
 node_modules/
-mcp-server/node_modules/
-mcp-server/dist/
-
-# Environment variables
-.env
-.env.local
-mcp-server/.env
-
-# Logs
-*.log
-npm-debug.log*
-
-# OS files
 .DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Build outputs
-dist/
-build/
+npm-debug.log*
+.env
+.env.*

@@ -40,9 +40,25 @@ export async function onRequestGet({ request, env }) {
   return json({ ok: true, status });
 }
 
+function requireWriteToken(request, env) {
+  const expected = env.FRIDAY_STATUS_WRITE_TOKEN;
+  if (!expected) return { ok: true, mode: 'disabled' };
+
+  const h = request.headers.get('authorization') || '';
+  const token = h.toLowerCase().startsWith('bearer ') ? h.slice(7).trim() : null;
+  if (!token) return { ok: false, reason: 'missing_bearer_token' };
+  if (token !== expected) return { ok: false, reason: 'invalid_token' };
+  return { ok: true, mode: 'token' };
+}
+
 export async function onRequestPut({ request, env }) {
+  // Reads are Access-protected via email.
+  // Writes can be further protected with FRIDAY_STATUS_WRITE_TOKEN.
   const auth = requireEmail(request, env);
   if (!auth.ok) return json({ error: 'unauthorized', reason: auth.reason }, { status: 401 });
+
+  const writeAuth = requireWriteToken(request, env);
+  if (!writeAuth.ok) return json({ error: 'forbidden', reason: writeAuth.reason }, { status: 403 });
 
   await ensureTable(env);
 

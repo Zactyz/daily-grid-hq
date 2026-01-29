@@ -164,18 +164,19 @@
           <p class="text-white/45 text-sm">A little live note for what I’m up to.</p>
         </div>
         <div class="flex items-center gap-2">
-          <select id="friday-mode" class="bg-transparent border border-white/10 rounded-xl px-2 py-2 text-xs text-white/80" aria-label="Friday mode">
+          <select id="friday-mode" class="bg-transparent border border-white/10 rounded-xl px-2 py-2 text-xs text-white/60" aria-label="Friday mode" disabled>
             <option value="idle">idle</option>
             <option value="working">working</option>
             <option value="waiting">waiting</option>
             <option value="sleeping">sleeping</option>
           </select>
-          <button id="save-friday" class="btn btn-primary" aria-label="Save Friday status">Save</button>
+          <span class="text-xs text-white/40">(set by Friday)</span>
         </div>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
-          <textarea id="friday-message" rows="4" class="w-full bg-transparent border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder:text-white/35" placeholder="What Friday is doing…" aria-label="Friday status message"></textarea>
+          <textarea id="friday-message" rows="4" class="w-full bg-transparent border border-white/10 rounded-2xl px-3 py-2 text-sm text-white/80 placeholder:text-white/35" placeholder="What Friday is doing…" aria-label="Friday status message" readonly></textarea>
+          <div class="text-[11px] text-white/35 mt-2">Read-only — this is written by automation so it stays accurate.</div>
           <div class="text-xs text-white/40 mono mt-2" id="friday-updated"></div>
         </div>
         <div class="bg-white/5 rounded-xl p-3">

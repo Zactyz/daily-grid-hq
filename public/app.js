@@ -37,7 +37,7 @@ const els = {
   fridayMode: document.getElementById('friday-mode'),
   fridayUpdated: document.getElementById('friday-updated'),
   fridayFocus: document.getElementById('friday-focus'),
-  saveFriday: document.getElementById('save-friday')
+  saveFriday: document.getElementById('save-friday') // may be null (UI is read-only in prod)
 };
 
 let searchQuery = '';
@@ -660,21 +660,8 @@ els.closeShortcuts.addEventListener('click', () => {
   els.shortcutsModal.classList.remove('flex');
 });
 
-els.saveFriday?.addEventListener('click', async () => {
-  try {
-    await api('/api/friday-status', {
-      method: 'PUT',
-      body: {
-        message: els.fridayMessage?.value || '',
-        mode: els.fridayMode?.value || 'idle'
-      }
-    });
-    showToast('Saved Friday status');
-    await refreshStatus();
-  } catch (e) {
-    showToast(`Save failed: ${e.message}`, 'error');
-  }
-});
+// Friday Status is intentionally read-only in the UI.
+// It is updated by automation (and optionally protected by a write token) so it stays accurate.
 
 // Close modals on backdrop click
 els.cardModal.addEventListener('click', (e) => {

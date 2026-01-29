@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler pages dev ./public --d1 DB=daily-grid-hq-db --port 8796",
-    "deploy": "wrangler pages deploy ./public"
+    "deploy": "wrangler pages deploy ./public",
+    "check:mcp": "cd mcp-server && npm install --silent && npx tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "wrangler": "^4.61.1"
