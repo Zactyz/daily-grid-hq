@@ -18,6 +18,18 @@ async function ensureCardsTable(env) {
   ).run();
 }
 
+async function ensureFridayStatusTable(env) {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS friday_status (
+      id TEXT PRIMARY KEY,
+      message TEXT,
+      mode TEXT,
+      focus_card_id TEXT,
+      updated_at INTEGER
+    );`
+  ).run();
+}
+
 const VALID = new Set(['backlog','doing','blocked','done']);
 
 export async function onRequestPatch({ request, env, params }) {
@@ -98,6 +110,35 @@ export async function onRequestPatch({ request, env, params }) {
   const res = await env.DB.prepare(sql).bind(...binds).run();
 
   if ((res.meta?.changes || 0) === 0) return json({ error: 'not_found' }, { status: 404 });
+
+  // If a task is moved into "doing", update Friday's focus automatically.
+  if (body.status != null) {
+    const status = String(body.status);
+    if (status === 'doing') {
+      await ensureFridayStatusTable(env);
+      const row = await env.DB.prepare('SELECT title FROM cards WHERE id = ?;').bind(id).first();
+      const title = row?.title ? String(row.title) : id;
+      const now = nowMs();
+      await env.DB.prepare(
+        'INSERT INTO friday_status (id, message, mode, focus_card_id, updated_at) VALUES (?, ?, ?, ?, ?)\n' +
+        'ON CONFLICT(id) DO UPDATE SET message=excluded.message, mode=excluded.mode, focus_card_id=excluded.focus_card_id, updated_at=excluded.updated_at;'
+      ).bind('singleton', `Working on: ${title}`, 'working', id, now).run();
+    }
+
+    // If a focused task is marked done, clear focus.
+    if (status === 'done') {
+      await ensureFridayStatusTable(env);
+      const cur = await env.DB.prepare('SELECT focus_card_id FROM friday_status WHERE id = ?;').bind('singleton').first();
+      if (cur?.focus_card_id === id) {
+        const now = nowMs();
+        await env.DB.prepare(
+          'INSERT INTO friday_status (id, message, mode, focus_card_id, updated_at) VALUES (?, ?, ?, ?, ?)\n' +
+          'ON CONFLICT(id) DO UPDATE SET message=excluded.message, mode=excluded.mode, focus_card_id=excluded.focus_card_id, updated_at=excluded.updated_at;'
+        ).bind('singleton', '', 'idle', null, now).run();
+      }
+    }
+  }
+
   return json({ ok: true });
 }
 
