@@ -56,13 +56,11 @@ export class KanbanApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
+    const headers = new Headers(options.headers as any);
+    headers.set('Content-Type', 'application/json');
 
     if (this.apiToken) {
-      headers['Authorization'] = `Bearer ${this.apiToken}`;
+      headers.set('Authorization', `Bearer ${this.apiToken}`);
     }
 
     const response = await fetch(url, {
@@ -70,10 +68,10 @@ export class KanbanApiClient {
       headers,
     });
 
-    const data = await response.json().catch(() => ({}));
+    const data: any = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      throw new Error(data.error || `HTTP ${response.status}: ${response.statusText}`);
+      throw new Error((data && data.error) || `HTTP ${response.status}: ${response.statusText}`);
     }
 
     return data as T;
