@@ -157,6 +157,35 @@
       </details>
     </section>
 
+    <section class="mt-4 glass rounded-2xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <h2 class="font-semibold">Friday Status</h2>
+          <p class="text-white/45 text-sm">A little live note for what I’m up to.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <select id="friday-mode" class="bg-transparent border border-white/10 rounded-xl px-2 py-2 text-xs text-white/80" aria-label="Friday mode">
+            <option value="idle">idle</option>
+            <option value="working">working</option>
+            <option value="waiting">waiting</option>
+            <option value="sleeping">sleeping</option>
+          </select>
+          <button id="save-friday" class="btn btn-primary" aria-label="Save Friday status">Save</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <textarea id="friday-message" rows="4" class="w-full bg-transparent border border-white/10 rounded-2xl px-3 py-2 text-sm text-white placeholder:text-white/35" placeholder="What Friday is doing…" aria-label="Friday status message"></textarea>
+          <div class="text-xs text-white/40 mono mt-2" id="friday-updated"></div>
+        </div>
+        <div class="bg-white/5 rounded-xl p-3">
+          <div class="text-xs text-white/60 mb-2">Focus card</div>
+          <div class="text-sm mono" id="friday-focus">(none)</div>
+          <div class="text-xs text-white/45 mt-3">Automation can set this when I pick up tasks.</div>
+        </div>
+      </div>
+    </section>
+
     <!-- Card Detail Modal -->
     <div id="card-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="modal-title">
       <div class="glass rounded-2xl p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">

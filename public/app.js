@@ -32,7 +32,12 @@ const els = {
   shortcutsModal: document.getElementById('shortcuts-modal'),
   shortcutsContent: document.getElementById('shortcuts-content'),
   closeShortcuts: document.getElementById('close-shortcuts'),
-  toast: document.getElementById('toast')
+  toast: document.getElementById('toast'),
+  fridayMessage: document.getElementById('friday-message'),
+  fridayMode: document.getElementById('friday-mode'),
+  fridayUpdated: document.getElementById('friday-updated'),
+  fridayFocus: document.getElementById('friday-focus'),
+  saveFriday: document.getElementById('save-friday')
 };
 
 let searchQuery = '';
@@ -367,7 +372,6 @@ async function refreshStatus() {
     els.whoami.textContent = me.email ? `as ${me.email}` : '(dev)';
 
     const health = await api('/api/health');
-    els.status.textContent = JSON.stringify({ me, health }, null, 2);
 
     // Update health indicator
     if (els.healthIndicator) {
@@ -413,6 +417,19 @@ async function refreshStatus() {
         <div class="text-xs text-white/60">Overdue</div>
       </div>
     `;
+
+    // Friday status
+    const friday = await api('/api/friday-status');
+    if (els.fridayMessage) els.fridayMessage.value = friday.status?.message || '';
+    if (els.fridayMode) els.fridayMode.value = friday.status?.mode || 'idle';
+    if (els.fridayUpdated) {
+      els.fridayUpdated.textContent = friday.status?.updatedAt ? `updated ${formatDate(friday.status.updatedAt)}` : 'not set';
+    }
+    if (els.fridayFocus) {
+      els.fridayFocus.textContent = friday.status?.focusCardId ? friday.status.focusCardId : '(none)';
+    }
+
+    els.status.textContent = JSON.stringify({ me, health, stats, friday }, null, 2);
   } catch (e) {
     els.status.textContent = String(e?.message || e);
     if (els.healthIndicator) {
@@ -641,6 +658,22 @@ els.closeModal.addEventListener('click', closeCardModal);
 els.closeShortcuts.addEventListener('click', () => {
   els.shortcutsModal.classList.add('hidden');
   els.shortcutsModal.classList.remove('flex');
+});
+
+els.saveFriday?.addEventListener('click', async () => {
+  try {
+    await api('/api/friday-status', {
+      method: 'PUT',
+      body: {
+        message: els.fridayMessage?.value || '',
+        mode: els.fridayMode?.value || 'idle'
+      }
+    });
+    showToast('Saved Friday status');
+    await refreshStatus();
+  } catch (e) {
+    showToast(`Save failed: ${e.message}`, 'error');
+  }
 });
 
 // Close modals on backdrop click
