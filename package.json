@@ -1,0 +1,12 @@
+{
+  "name": "daily-grid-hq",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler pages dev ./public --d1 DB=daily-grid-hq-db --port 8796",
+    "deploy": "wrangler pages deploy ./public"
+  },
+  "devDependencies": {
+    "wrangler": "^4.61.1"
+  }
+}
