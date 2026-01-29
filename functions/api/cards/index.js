@@ -99,20 +99,8 @@ export async function onRequestPost({ request, env }) {
     'INSERT INTO cards (id, title, status, sort, created_at, updated_at, description, labels, due_date, archived, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?);'
   ).bind(id, title, status, sort, now, now, description, labels, dueDate, priority).run();
 
-  // "Pick up" new tasks automatically by setting Friday's focus.
-  // This keeps the Status panel accurate without manual editing.
-  if (status === 'backlog' || status === 'doing') {
-    await env.DB.prepare(
-      'INSERT INTO friday_status (id, message, mode, focus_card_id, updated_at) VALUES (?, ?, ?, ?, ?)\n' +
-      'ON CONFLICT(id) DO UPDATE SET message=excluded.message, mode=excluded.mode, focus_card_id=excluded.focus_card_id, updated_at=excluded.updated_at;'
-    ).bind(
-      'singleton',
-      `Picked up: ${title}`,
-      'working',
-      id,
-      now
-    ).run();
-  }
+  // NOTE: We intentionally do NOT auto-update Friday Status here.
+  // Status should reflect the real agent executor, not just card creation.
 
   return json({ ok: true, id });
 }
