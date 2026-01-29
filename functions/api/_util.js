@@ -14,7 +14,10 @@ export function requireEmail(request, env) {
   const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/);
   if (bearerMatch) {
     const token = bearerMatch[1];
-    const validToken = env.API_TOKEN || env.KANBAN_API_TOKEN;
+    // Token auth for automation.
+    // Prefer dedicated API_TOKEN / KANBAN_API_TOKEN.
+    // For dev/testing, allow FRIDAY_STATUS_WRITE_TOKEN to double as the API token.
+    const validToken = env.API_TOKEN || env.KANBAN_API_TOKEN || env.FRIDAY_STATUS_WRITE_TOKEN;
     if (validToken && token === validToken) {
       return { ok: true, email: null, authMethod: 'token' };
     }
