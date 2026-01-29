@@ -420,8 +420,18 @@ async function refreshStatus() {
 
     // Friday status
     const friday = await api('/api/friday-status');
-    if (els.fridayMessage) els.fridayMessage.value = friday.status?.message || '';
-    if (els.fridayMode) els.fridayMode.value = friday.status?.mode || 'idle';
+    const mode = friday.status?.mode || 'idle';
+    const rawMsg = friday.status?.message || '';
+    const fallback = mode === 'working'
+      ? 'Working…'
+      : mode === 'waiting'
+        ? 'Waiting for your next command…'
+        : mode === 'sleeping'
+          ? 'Sleeping (wake me if you need me).'
+          : 'Idle — watching for new tasks.';
+
+    if (els.fridayMessage) els.fridayMessage.value = rawMsg.trim() ? rawMsg : fallback;
+    if (els.fridayMode) els.fridayMode.value = mode;
     if (els.fridayUpdated) {
       els.fridayUpdated.textContent = friday.status?.updatedAt ? `updated ${formatDate(friday.status.updatedAt)}` : 'not set';
     }

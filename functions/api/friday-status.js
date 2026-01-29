@@ -52,13 +52,19 @@ function requireWriteToken(request, env) {
 }
 
 export async function onRequestPut({ request, env }) {
-  // Reads are Access-protected via email.
-  // Writes can be further protected with FRIDAY_STATUS_WRITE_TOKEN.
-  const auth = requireEmail(request, env);
-  if (!auth.ok) return json({ error: 'unauthorized', reason: auth.reason }, { status: 401 });
-
+  // Writes are intended for automation.
+  // If FRIDAY_STATUS_WRITE_TOKEN is set, allow Bearer-token writes *without* Cloudflare Access.
+  // If FRIDAY_STATUS_WRITE_TOKEN is not set, fall back to Access (email header).
   const writeAuth = requireWriteToken(request, env);
-  if (!writeAuth.ok) return json({ error: 'forbidden', reason: writeAuth.reason }, { status: 403 });
+
+  if (writeAuth.mode === 'token') {
+    // ok
+  } else {
+    const auth = requireEmail(request, env);
+    if (!auth.ok) return json({ error: 'unauthorized', reason: auth.reason }, { status: 401 });
+
+    if (!writeAuth.ok) return json({ error: 'forbidden', reason: writeAuth.reason }, { status: 403 });
+  }
 
   await ensureTable(env);
 
