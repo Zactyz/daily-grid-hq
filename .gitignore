@@ -3,6 +3,9 @@ node_modules/
 mcp-server/node_modules/
 mcp-server/dist/
 
+# Local config with secrets (use wrangler.toml.example as template)
+# wrangler.toml  # Uncomment if you want to use local config with real IDs
+
 # Environment variables
 .env
 .env.local
