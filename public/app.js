@@ -64,7 +64,12 @@ const els = {
   quickAddModal: document.getElementById('quick-add-modal'),
   quickAddForm: document.getElementById('quick-add-form'),
   quickAddTitle: document.getElementById('quick-add-title-input'),
+  quickAddDescription: document.getElementById('quick-add-description'),
   quickAddStatus: document.getElementById('quick-add-status'),
+  quickAddPriority: document.getElementById('quick-add-priority'),
+  quickAddDue: document.getElementById('quick-add-due'),
+  quickAddAuto: document.getElementById('quick-add-auto'),
+  quickAddClearLabels: document.getElementById('quick-add-clear-labels'),
   closeQuickAdd: document.getElementById('close-quick-add')
 };
 
@@ -1506,15 +1511,47 @@ els.quickAddModal?.addEventListener('click', (e) => {
   if (e.target === els.quickAddModal) closeQuickAdd();
 });
 
+function getQuickAddSelectedLabels() {
+  const boxes = Array.from(document.querySelectorAll('#quick-add-form .quick-add-label'));
+  return boxes.filter(b => b.checked).map(b => b.value);
+}
+
+function clearQuickAddLabels() {
+  const boxes = Array.from(document.querySelectorAll('#quick-add-form .quick-add-label'));
+  boxes.forEach(b => { b.checked = false; });
+}
+
+els.quickAddClearLabels?.addEventListener('click', () => clearQuickAddLabels());
+
 els.quickAddForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const title = els.quickAddTitle?.value.trim();
+
+  let title = els.quickAddTitle?.value.trim();
   if (!title) return;
 
   const status = els.quickAddStatus?.value || (activeLane || 'backlog');
+  const description = els.quickAddDescription?.value?.trim() || '';
+  const priority = els.quickAddPriority?.value || '';
+  const due = els.quickAddDue?.value || '';
+  const labels = getQuickAddSelectedLabels();
+
+  // AUTO: prefix is how the runner currently detects "auto" work.
+  const wantsAuto = !!els.quickAddAuto?.checked;
+  if (wantsAuto && !title.toUpperCase().startsWith('AUTO:')) {
+    title = `AUTO: ${title}`;
+  }
+
+  const body = {
+    title,
+    status,
+    ...(description ? { description } : {}),
+    ...(priority ? { priority } : {}),
+    ...(due ? { dueDate: due } : {}),
+    ...(labels.length ? { labels } : {})
+  };
 
   try {
-    await api('/api/cards', { method: 'POST', body: { title, status } });
+    await api('/api/cards', { method: 'POST', body });
     closeQuickAdd();
     await refreshBoard();
 
