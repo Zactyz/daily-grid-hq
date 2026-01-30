@@ -8,3 +8,11 @@ pages_build_output_dir = "./public"
 binding = "DB"
 database_name = "daily-grid-hq-db"
 database_id = "1b5e2e4c-b4b3-4305-b19f-846d1413ce28"
+
+# R2 bucket binding (recommended) for image attachments
+# Configure in Cloudflare Pages dashboard for production.
+#
+# [[r2_buckets]]
+# binding = "ATTACHMENTS"
+# bucket_name = "daily-grid-hq-attachments"
+# preview_bucket_name = "daily-grid-hq-attachments-dev"

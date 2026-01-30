@@ -13,6 +13,8 @@ A modern kanban board dashboard with AI agent integration via MCP (Model Context
   - Due dates with overdue indicators
   - Priority levels (low, medium, high, urgent)
   - Archive (soft delete) instead of permanent deletion
+  - Comments (per-card)
+  - Image attachments (via R2)
 
 ### User Experience
 - **Keyboard shortcuts** for power users
@@ -63,9 +65,13 @@ If you have an existing database, apply migrations:
 ```bash
 # Local
 wrangler d1 execute DB --local --file=scripts/migrate-001-enhanced-cards.sql
+wrangler d1 execute DB --local --file=scripts/migrate-002-friday-status.sql
+wrangler d1 execute DB --local --file=scripts/migrate-003-comments-attachments.sql
 
 # Production
 wrangler d1 execute DB --file=scripts/migrate-001-enhanced-cards.sql
+wrangler d1 execute DB --file=scripts/migrate-002-friday-status.sql
+wrangler d1 execute DB --file=scripts/migrate-003-comments-attachments.sql
 ```
 
 ## Deployment
@@ -90,9 +96,11 @@ wrangler d1 execute DB --file=scripts/migrate-001-enhanced-cards.sql
    npm run deploy
    ```
 
-5. **Configure environment variables** in Cloudflare Pages dashboard:
+5. **Configure environment variables / bindings** in Cloudflare Pages dashboard:
    - `ALLOWED_EMAILS`: Comma-separated list of allowed email addresses (optional, leave empty for dev mode)
    - `API_TOKEN` or `KANBAN_API_TOKEN`: Optional Bearer token for API/MCP access
+   - **R2 binding (recommended for attachments):** bind an R2 bucket as `ATTACHMENTS`
+   - Optional limit: `MAX_ATTACHMENT_BYTES` (default 5MB)
 
 ### Authentication
 
@@ -152,6 +160,17 @@ See [`MOLTBOT_INTEGRATION.md`](MOLTBOT_INTEGRATION.md) for complete documentatio
 - `PATCH /api/cards/:id` - Update a card
 - `DELETE /api/cards/:id` - Delete a card (hard delete)
 - `POST /api/cards/:id/archive` - Archive a card (soft delete)
+
+### Comments
+
+- `GET /api/cards/:id/comments` - List comments for a card
+- `POST /api/cards/:id/comments` - Add a comment (`{ text }`)
+
+### Attachments
+
+- `GET /api/cards/:id/attachments` - List attachments for a card
+- `POST /api/cards/:id/attachments` - Upload an image (multipart form field `file`)
+- `GET /api/attachments/:id` - Fetch an attachment binary (requires auth)
 
 ### Other
 
