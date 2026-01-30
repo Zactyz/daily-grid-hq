@@ -21,13 +21,22 @@
       background: var(--bg);
       color: #e8e8ed;
     }
+    body.modal-open { overflow: hidden; }
     .mono { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace; }
     .glass { background: var(--glass); border: 1px solid var(--border); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
     .btn { border-radius: 12px; padding: 10px 14px; font-weight: 600; font-size: 14px; }
     .btn-primary { background: linear-gradient(135deg, rgba(125,211,252,0.95), rgba(56,189,248,0.95)); color: #061018; }
     .btn-secondary { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.10); color: rgba(232,232,237,0.75); }
     .card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+    .drag-handle { cursor: grab; user-select: none; -webkit-user-select: none; touch-action: pan-y; }
+    .drag-handle:active { cursor: grabbing; }
     .lane { min-height: 240px; }
+
+    /* Perf: reduce layout/paint scope when lanes update frequently */
+    #kanban-board { contain: layout paint; }
+    .lane-column { contain: layout paint; }
+    .lane { contain: layout paint; }
+
     .sortable-ghost { opacity: 0.4; }
     .sortable-drag { opacity: 0.8; }
     .priority-low { border-left: 3px solid #6b7280; }
@@ -39,12 +48,62 @@
       .lane { min-height: 180px; }
       .card { min-height: 60px; touch-action: pan-y; }
       .btn { min-height: 44px; min-width: 44px; }
-      #kanban-board { overflow-x: auto; -webkit-overflow-scrolling: touch; scroll-snap-type: x mandatory; }
-      #kanban-board > div { scroll-snap-align: start; min-width: 85vw; }
-      #card-modal > div { max-height: 95vh; margin: 2.5vh auto; }
-    }
-    @media (max-width: 640px) {
-      #kanban-board > div { min-width: 90vw; }
+
+      /* Mobile: single-lane view. Desktop remains 4-column. */
+      #kanban-board {
+        display: block;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-y: contain;
+        scroll-snap-type: none;
+      }
+      #kanban-board .lane-column { display: none; }
+      #kanban-board .lane-column.active { display: block; }
+
+      /* Make the single column full-width on mobile */
+      #kanban-board .lane-column { min-width: 100%; }
+
+      /* Segmented tabs */
+      #lane-switcher .lane-tab[aria-selected="true"] {
+        background: rgba(255,255,255,0.07);
+        border: 1px solid rgba(255,255,255,0.10);
+        color: rgba(255,255,255,0.92);
+      }
+
+      /* Card modal becomes a bottom sheet on mobile (keyboard-safe via visualViewport vars) */
+      #card-modal { align-items: flex-end; justify-content: center; }
+      #card-modal .card-modal-sheet {
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        /* Prefer dynamic viewport sizing; fall back to vh if vars unsupported */
+        height: calc(var(--vvh, 100vh) * 0.95);
+        max-height: calc(var(--vvh, 100vh) * 0.95);
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+      }
+      #card-modal .card-modal-body {
+        -webkit-overflow-scrolling: touch;
+        /* Ensure the last fields can scroll above the sticky action bar + iOS keyboard */
+        padding-bottom: calc(6.5rem + env(safe-area-inset-bottom) + var(--keyboard-inset, 0px));
+      }
+      #card-modal .card-modal-actions {
+        /* Keep Save/Cancel comfortably tappable above safe-area + keyboard */
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom) + var(--keyboard-inset, 0px));
+      }
+
+      /* Quick-add bottom sheet (keyboard-safe) */
+      #quick-add-modal { padding-bottom: calc(env(safe-area-inset-bottom) + var(--keyboard-inset, 0px)); }
+      #quick-add-modal .card-modal-sheet {
+        width: 100%;
+        max-width: none;
+        margin: 0;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+      }
+
+      /* Keep FAB above iOS safe-area */
+      #fab-new-card { bottom: calc(1rem + env(safe-area-inset-bottom)); }
     }
   </style>
 </head>
@@ -67,8 +126,8 @@
     </div>
   </nav>
 
-  <main class="max-w-6xl mx-auto px-4 pt-20 pb-10">
-    <header class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between mb-6">
+  <main class="max-w-6xl mx-auto px-4 pt-16 md:pt-20 pb-10">
+    <header class="hidden md:flex flex-col gap-3 md:flex-row md:items-end md:justify-between mb-6">
       <div>
         <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-white/70 text-xs font-medium uppercase tracking-widest">
           <span class="w-1.5 h-1.5 rounded-full" style="background: var(--accent);"></span>
@@ -95,8 +154,75 @@
       </div>
     </header>
 
+    <!-- Friday status (move to top) -->
+    <section class="mt-4 glass rounded-2xl p-4">
+      <div class="flex items-start justify-between gap-3">
+        <div class="flex items-start gap-3">
+          <div class="w-10 h-10 rounded-2xl flex items-center justify-center" style="background: rgba(125,211,252,0.12); border: 1px solid rgba(125,211,252,0.25);">
+            <span class="mono font-bold" style="color: var(--accent);">F</span>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <div class="font-semibold">Friday</div>
+              <span id="friday-mode" class="inline-flex items-center gap-2 px-2 py-1 rounded-full bg-white/5 border border-white/10 text-xs text-white/70">
+                <span id="friday-dot" class="w-2 h-2 rounded-full bg-white/40"></span>
+                <span id="friday-mode-text">idle</span>
+              </span>
+            </div>
+            <div id="friday-message" class="mt-1 text-sm text-white/80 leading-snug">—</div>
+            <div class="text-[11px] text-white/35 mt-2">
+              <span id="friday-updated">not set</span>
+              <span class="mx-2">•</span>
+              <span class="text-white/35">focus:</span>
+              <span id="friday-focus" class="mono">(none)</span>
+            </div>
+          </div>
+        </div>
+        <div class="text-xs text-white/35 text-right hidden sm:block">
+          Slack/Teams-style status for quick at-a-glance context.
+        </div>
+      </div>
+    </section>
+
+    <!-- Mobile sticky header: compact actions + lane selector -->
+    <div id="mobile-sticky-header" class="md:hidden sticky top-16 z-40 -mx-4 px-4 py-2 space-y-2">
+      <div class="glass rounded-2xl p-2 flex items-center gap-2">
+        <button id="mobile-search-toggle" class="btn btn-secondary" aria-label="Search" title="Search" aria-expanded="false">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </button>
+
+        <div id="mobile-search-wrap" class="hidden flex-1 items-center gap-2">
+          <input id="mobile-search-input" type="text" class="flex-1 bg-transparent border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-white/35" placeholder="Search cards…" aria-label="Search cards" />
+          <button id="mobile-clear-search" class="btn btn-secondary hidden" aria-label="Clear search">Clear</button>
+        </div>
+
+        <button id="mobile-help" class="btn btn-secondary" aria-label="Shortcuts" title="Shortcuts">?</button>
+      </div>
+
+      <div id="lane-switcher" class="glass rounded-2xl p-1 flex gap-1" role="tablist" aria-label="Kanban lanes">
+        <button class="lane-tab flex-1 px-3 py-2 rounded-xl text-sm font-semibold text-white/70 hover:text-white/90 hover:bg-white/5" data-tab="backlog" role="tab" aria-selected="false" aria-controls="lane-col-backlog">
+          <span>Backlog</span>
+          <span class="ml-2 text-xs text-white/45 mono" data-count="backlog">0</span>
+        </button>
+        <button class="lane-tab flex-1 px-3 py-2 rounded-xl text-sm font-semibold text-white/70 hover:text-white/90 hover:bg-white/5" data-tab="doing" role="tab" aria-selected="false" aria-controls="lane-col-doing">
+          <span>Doing</span>
+          <span class="ml-2 text-xs text-white/45 mono" data-count="doing">0</span>
+        </button>
+        <button class="lane-tab flex-1 px-3 py-2 rounded-xl text-sm font-semibold text-white/70 hover:text-white/90 hover:bg-white/5" data-tab="blocked" role="tab" aria-selected="false" aria-controls="lane-col-blocked">
+          <span>Blocked</span>
+          <span class="ml-2 text-xs text-white/45 mono" data-count="blocked">0</span>
+        </button>
+        <button class="lane-tab flex-1 px-3 py-2 rounded-xl text-sm font-semibold text-white/70 hover:text-white/90 hover:bg-white/5" data-tab="done" role="tab" aria-selected="false" aria-controls="lane-col-done">
+          <span>Done</span>
+          <span class="ml-2 text-xs text-white/45 mono" data-count="done">0</span>
+        </button>
+      </div>
+    </div>
+
     <section class="grid grid-cols-1 md:grid-cols-4 gap-4 overflow-x-auto" id="kanban-board">
-      <div class="glass rounded-2xl p-3 min-w-[280px]">
+      <div id="lane-col-backlog" class="lane-column glass rounded-2xl p-3 min-w-[280px]" data-lane-col="backlog">
         <div class="flex items-center justify-between mb-3">
           <h2 class="font-semibold" aria-label="Backlog column">Backlog</h2>
           <span class="text-xs text-white/45 mono" data-count="backlog" aria-label="Number of cards in backlog">0</span>
@@ -104,7 +230,7 @@
         <div class="lane space-y-2" data-lane="backlog" role="list" aria-label="Backlog cards"></div>
       </div>
 
-      <div class="glass rounded-2xl p-3 min-w-[280px]">
+      <div id="lane-col-doing" class="lane-column glass rounded-2xl p-3 min-w-[280px]" data-lane-col="doing">
         <div class="flex items-center justify-between mb-3">
           <h2 class="font-semibold" aria-label="Doing column">Doing</h2>
           <span class="text-xs text-white/45 mono" data-count="doing" aria-label="Number of cards in doing">0</span>
@@ -112,7 +238,7 @@
         <div class="lane space-y-2" data-lane="doing" role="list" aria-label="Doing cards"></div>
       </div>
 
-      <div class="glass rounded-2xl p-3 min-w-[280px]">
+      <div id="lane-col-blocked" class="lane-column glass rounded-2xl p-3 min-w-[280px]" data-lane-col="blocked">
         <div class="flex items-center justify-between mb-3">
           <h2 class="font-semibold" aria-label="Blocked column">Blocked</h2>
           <span class="text-xs text-white/45 mono" data-count="blocked" aria-label="Number of cards in blocked">0</span>
@@ -120,7 +246,7 @@
         <div class="lane space-y-2" data-lane="blocked" role="list" aria-label="Blocked cards"></div>
       </div>
 
-      <div class="glass rounded-2xl p-3 min-w-[280px]">
+      <div id="lane-col-done" class="lane-column glass rounded-2xl p-3 min-w-[280px]" data-lane-col="done">
         <div class="flex items-center justify-between mb-3">
           <h2 class="font-semibold" aria-label="Done column">Done</h2>
           <span class="text-xs text-white/45 mono" data-count="done" aria-label="Number of cards in done">0</span>
@@ -157,44 +283,14 @@
       </details>
     </section>
 
-    <section class="mt-4 glass rounded-2xl p-4">
-      <div class="flex items-center justify-between mb-3">
-        <div>
-          <h2 class="font-semibold">Friday Status</h2>
-          <p class="text-white/45 text-sm">A little live note for what I’m up to.</p>
-        </div>
-        <div class="flex items-center gap-2">
-          <select id="friday-mode" class="bg-transparent border border-white/10 rounded-xl px-2 py-2 text-xs text-white/60" aria-label="Friday mode" disabled>
-            <option value="idle">idle</option>
-            <option value="working">working</option>
-            <option value="waiting">waiting</option>
-            <option value="sleeping">sleeping</option>
-          </select>
-          <span class="text-xs text-white/40">(set by Friday)</span>
-        </div>
-      </div>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-          <textarea id="friday-message" rows="4" class="w-full bg-transparent border border-white/10 rounded-2xl px-3 py-2 text-sm text-white/80 placeholder:text-white/35" placeholder="What Friday is doing…" aria-label="Friday status message" readonly></textarea>
-          <div class="text-[11px] text-white/35 mt-2">Read-only — this is written by automation so it stays accurate.</div>
-          <div class="text-xs text-white/40 mono mt-2" id="friday-updated"></div>
-        </div>
-        <div class="bg-white/5 rounded-xl p-3">
-          <div class="text-xs text-white/60 mb-2">Focus card</div>
-          <div class="text-sm mono" id="friday-focus">(none)</div>
-          <div class="text-xs text-white/45 mt-3">Automation can set this when I pick up tasks.</div>
-        </div>
-      </div>
-    </section>
-
     <!-- Card Detail Modal -->
     <div id="card-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <div class="glass rounded-2xl p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div class="flex items-center justify-between mb-4">
+      <div class="card-modal-sheet glass rounded-2xl max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col">
+        <div class="px-6 pt-6 pb-4 flex items-center justify-between">
           <h3 id="modal-title" class="text-xl font-semibold">Card Details</h3>
-          <button id="close-modal" class="w-8 h-8 rounded-xl border border-white/10 text-white/60 hover:text-white hover:bg-white/5" aria-label="Close modal">×</button>
+          <button id="close-modal" class="w-10 h-10 rounded-xl border border-white/10 text-white/60 hover:text-white hover:bg-white/5" aria-label="Close modal">×</button>
         </div>
-        <div id="modal-content"></div>
+        <div id="modal-content" class="card-modal-body px-6 pb-6 overflow-y-auto"></div>
       </div>
     </div>
 
@@ -206,6 +302,107 @@
           <button id="close-shortcuts" class="w-8 h-8 rounded-xl border border-white/10 text-white/60 hover:text-white hover:bg-white/5" aria-label="Close shortcuts">×</button>
         </div>
         <div id="shortcuts-content" class="space-y-2 text-sm"></div>
+      </div>
+    </div>
+
+    <!-- Quick Add (mobile) -->
+    <button id="fab-new-card" class="md:hidden fixed z-40 right-4 bottom-4 w-14 h-14 rounded-2xl btn btn-primary shadow-lg" aria-label="Create new task" title="New task">
+      <span class="text-2xl leading-none">+</span>
+    </button>
+
+    <div id="quick-add-modal" class="fixed inset-0 z-50 hidden items-end justify-center bg-black/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="quick-add-title">
+      <div class="glass rounded-t-2xl w-full max-w-2xl mx-0 card-modal-sheet">
+        <div class="px-5 pt-5 pb-3 flex items-center justify-between">
+          <h3 id="quick-add-title" class="text-lg font-semibold">New task</h3>
+          <button id="close-quick-add" class="w-10 h-10 rounded-xl border border-white/10 text-white/60 hover:text-white hover:bg-white/5" aria-label="Close">×</button>
+        </div>
+        <form id="quick-add-form" class="px-5 pb-6 space-y-3">
+          <input id="quick-add-title-input" class="w-full bg-transparent border border-white/10 rounded-xl px-3 py-3 text-base text-white placeholder:text-white/35" placeholder="What needs doing?" maxlength="140" aria-label="Task title" />
+
+          <textarea id="quick-add-description" rows="3" class="w-full bg-transparent border border-white/10 rounded-xl px-3 py-3 text-base text-white placeholder:text-white/35" placeholder="Description (optional)" aria-label="Task description"></textarea>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="flex items-center justify-between gap-3">
+              <label class="text-xs text-white/45">Lane</label>
+              <select id="quick-add-status" class="bg-transparent border border-white/10 rounded-xl px-2 py-2 text-sm text-white/80" aria-label="Lane">
+                <option value="backlog">backlog</option>
+                <option value="doing">doing</option>
+                <option value="blocked">blocked</option>
+                <option value="done">done</option>
+              </select>
+            </div>
+
+            <div class="flex items-center justify-between gap-3">
+              <label class="text-xs text-white/45">Priority</label>
+              <select id="quick-add-priority" class="bg-transparent border border-white/10 rounded-xl px-2 py-2 text-sm text-white/80" aria-label="Priority">
+                <option value="">(none)</option>
+                <option value="low">low</option>
+                <option value="medium" selected>medium</option>
+                <option value="high">high</option>
+                <option value="urgent">urgent</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between gap-3">
+            <label class="text-xs text-white/45">Due</label>
+            <input id="quick-add-due" type="date" class="bg-transparent border border-white/10 rounded-xl px-3 py-2 text-sm text-white/80" aria-label="Due date" />
+          </div>
+
+          <label class="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-3 py-3">
+            <input id="quick-add-auto" type="checkbox" class="w-5 h-5" />
+            <div class="flex-1">
+              <div class="text-sm font-semibold">AUTO:</div>
+              <div class="text-[11px] text-white/45">Prefix the title with <span class="mono">AUTO:</span> so the runner can pick it up.</div>
+            </div>
+          </label>
+
+          <div class="bg-white/5 border border-white/10 rounded-xl px-3 py-3">
+            <div class="flex items-center justify-between">
+              <label class="text-xs text-white/45">Labels</label>
+              <button id="quick-add-clear-labels" type="button" class="text-xs text-white/50 hover:text-white/80">Clear</button>
+            </div>
+            <div class="mt-2 grid grid-cols-2 gap-2" aria-label="Labels">
+              <label class="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-black/10">
+                <input type="checkbox" class="quick-add-label w-5 h-5" value="inbox" />
+                <span class="text-sm">inbox</span>
+              </label>
+              <label class="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-black/10">
+                <input type="checkbox" class="quick-add-label w-5 h-5" value="workflow" />
+                <span class="text-sm">workflow</span>
+              </label>
+              <label class="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-black/10">
+                <input type="checkbox" class="quick-add-label w-5 h-5" value="telegram" />
+                <span class="text-sm">telegram</span>
+              </label>
+              <label class="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-black/10">
+                <input type="checkbox" class="quick-add-label w-5 h-5" value="bug" />
+                <span class="text-sm">bug</span>
+              </label>
+              <label class="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-black/10">
+                <input type="checkbox" class="quick-add-label w-5 h-5" value="notifications" />
+                <span class="text-sm">notifications</span>
+              </label>
+              <label class="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-black/10">
+                <input type="checkbox" class="quick-add-label w-5 h-5" value="core" />
+                <span class="text-sm">core</span>
+              </label>
+
+              <label class="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-black/10">
+                <input type="checkbox" class="quick-add-label w-5 h-5" value="epic" />
+                <span class="text-sm">epic</span>
+              </label>
+
+              <label class="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 bg-black/10">
+                <input type="checkbox" class="quick-add-label w-5 h-5" value="auto_expand" />
+                <span class="text-sm">auto_expand</span>
+              </label>
+            </div>
+          </div>
+
+          <button class="btn btn-primary w-full" type="submit" aria-label="Create">Create</button>
+          <div class="text-[11px] text-white/35">Tip: This defaults to the lane you’re viewing.</div>
+        </form>
       </div>
     </div>
 
