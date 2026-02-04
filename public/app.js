@@ -340,6 +340,19 @@ function cardEl(card) {
     meta.appendChild(labelsContainer);
   }
 
+  // Epic badge + parent epic link
+  if (card.isEpic) {
+    const epicEl = document.createElement('span');
+    epicEl.className = 'text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-200';
+    epicEl.textContent = card.childCount ? `Epic • ${card.childCount} child${card.childCount === 1 ? '' : 'ren'}` : 'Epic';
+    meta.appendChild(epicEl);
+  } else if (card.epicTitle) {
+    const parentEl = document.createElement('span');
+    parentEl.className = 'text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/70';
+    parentEl.textContent = `Epic: ${card.epicTitle}`;
+    meta.appendChild(parentEl);
+  }
+
   // Priority badge
   if (card.priority) {
     const priorityEl = document.createElement('span');
@@ -572,6 +585,13 @@ function cardEl(card) {
 
 function openCardModal(card) {
   const isMobile = window.innerWidth < 768;
+  const epicCandidates = Object.values(cardsData || {})
+    .filter(c => c.isEpic && !c.archived && c.id !== card.id)
+    .sort((a, b) => a.title.localeCompare(b.title));
+  const epicOptions = [
+    `<option value="">(none)</option>`,
+    ...epicCandidates.map(e => `<option value="${e.id}" ${e.id === card.epicId ? 'selected' : ''}>${escapeHtml(e.title)}</option>`)
+  ].join('');
 
   const quickActionsHtml = isMobile ? `
     <div class="glass rounded-2xl p-3 border border-white/10">
@@ -653,6 +673,23 @@ function openCardModal(card) {
         <label class="block text-sm font-medium mb-1">Labels (comma-separated)</label>
         <input type="text" id="card-labels" value="${card.labels ? card.labels.join(', ') : ''}" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 ${isMobile ? 'py-3 text-base' : 'py-2 text-sm'} text-white min-h-[44px]" placeholder="bug, feature, urgent" />
       </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Epic</label>
+        <label class="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-3 ${isMobile ? 'py-3 text-base' : 'py-2 text-sm'}">
+          <input id="card-is-epic" type="checkbox" class="w-5 h-5" ${card.isEpic ? 'checked' : ''} />
+          <div class="flex-1">
+            <div class="text-sm font-semibold">This card is an epic</div>
+            <div class="text-[11px] text-white/45">Epics can contain child cards, but cannot belong to another epic.</div>
+          </div>
+        </label>
+        <div class="mt-2">
+          <label class="block text-xs text-white/45 mb-1">Parent epic</label>
+          <select id="card-epic-id" class="w-full bg-white/5 border border-white/10 rounded-xl px-3 ${isMobile ? 'py-3 text-base' : 'py-2 text-sm'} text-white min-h-[44px]" ${card.isEpic ? 'disabled' : ''}>
+            ${epicOptions}
+          </select>
+          <div class="text-[11px] text-white/35 mt-1">Only non-epic cards can be linked to a parent epic.</div>
+        </div>
+      </div>
       <div class="card-modal-actions sticky bottom-0 ${isMobile ? '-mx-6 px-6' : ''} pt-3 pb-4 mt-4 bg-black/30 backdrop-blur border-t border-white/10">
         <div class="${isMobile ? 'grid grid-cols-2 gap-2' : 'flex flex-row gap-2 justify-end'}">
           <button type="button" id="cancel-card" class="btn btn-secondary min-h-[44px] ${isMobile ? 'w-full' : ''}">Cancel</button>
@@ -671,6 +708,16 @@ function openCardModal(card) {
 
   // Load comments + attachments (async; no need to wait for Save)
   initCardExtras(card);
+
+  const epicToggle = document.getElementById('card-is-epic');
+  const epicSelect = document.getElementById('card-epic-id');
+  if (epicToggle && epicSelect) {
+    epicToggle.addEventListener('change', () => {
+      const isEpic = epicToggle.checked;
+      epicSelect.disabled = isEpic;
+      if (isEpic) epicSelect.value = '';
+    });
+  }
 
   // Mobile-only quick actions (1 tap)
   if (isMobile) {
@@ -749,6 +796,8 @@ function openCardModal(card) {
 
     const labels = document.getElementById('card-labels').value.split(',').map(s => s.trim()).filter(Boolean);
     const dueDate = document.getElementById('card-due-date').value || null;
+    const isEpic = document.getElementById('card-is-epic').checked;
+    const epicId = isEpic ? null : (document.getElementById('card-epic-id').value || null);
 
     try {
       await api(`/api/cards/${card.id}`, {
@@ -759,7 +808,9 @@ function openCardModal(card) {
           status: document.getElementById('card-status').value,
           priority: document.getElementById('card-priority').value || null,
           labels,
-          dueDate: dueDate ? new Date(dueDate).getTime() : null
+          dueDate: dueDate ? new Date(dueDate).getTime() : null,
+          isEpic,
+          epicId
         }
       });
       closeCardModal();
@@ -1141,7 +1192,8 @@ function matchesFilter(card) {
     const matchesTitle = card.title.toLowerCase().includes(query);
     const matchesDescription = (card.description || '').toLowerCase().includes(query);
     const matchesLabels = (card.labels || []).some(label => label.toLowerCase().includes(query));
-    if (!matchesTitle && !matchesDescription && !matchesLabels) {
+    const matchesEpic = (card.epicTitle || '').toLowerCase().includes(query);
+    if (!matchesTitle && !matchesDescription && !matchesLabels && !matchesEpic) {
       return false;
     }
   }
@@ -1207,11 +1259,26 @@ async function refreshBoard() {
     const data = await api(url);
     const newUpdateTime = Date.now();
 
-    const nextCardsData = Object.fromEntries((data.cards || []).map(c => [c.id, c]));
+    const rawCards = data.cards || [];
+
+    const epicMap = new Map();
+    const childCounts = {};
+    for (const c of rawCards) {
+      if (c.isEpic) epicMap.set(c.id, c);
+      if (c.epicId) childCounts[c.epicId] = (childCounts[c.epicId] || 0) + 1;
+    }
+
+    const decoratedCards = rawCards.map((c) => ({
+      ...c,
+      epicTitle: c.epicId && epicMap.has(c.epicId) ? epicMap.get(c.epicId).title : null,
+      childCount: c.isEpic ? (childCounts[c.id] || 0) : 0,
+    }));
+
+    const nextCardsData = Object.fromEntries(decoratedCards.map(c => [c.id, c]));
 
     // Build filtered, per-lane lists
     const byLane = Object.fromEntries(lanes.map(s => [s, []]));
-    for (const c of (data.cards || [])) {
+    for (const c of decoratedCards) {
       if (matchesFilter(c)) byLane[c.status].push(c);
     }
 

@@ -13,7 +13,9 @@ async function ensureCardsTable(env) {
       labels TEXT,
       due_date INTEGER,
       archived INTEGER DEFAULT 0,
-      priority TEXT CHECK (priority IN ('low', 'medium', 'high', 'urgent'))
+      priority TEXT CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+      is_epic INTEGER DEFAULT 0,
+      epic_id TEXT
     );`
   ).run();
 }
@@ -21,6 +23,24 @@ async function ensureCardsTable(env) {
 // (intentionally removed auto friday_status updates here)
 
 const VALID = new Set(['backlog','doing','blocked','done']);
+const VALID_PRIORITY = new Set(['low', 'medium', 'high', 'urgent']);
+
+async function resolveEpic(env, epicId) {
+  if (!epicId) return null;
+  const row = await env.DB.prepare(
+    'SELECT id, is_epic, archived FROM cards WHERE id = ? LIMIT 1;'
+  ).bind(epicId).first();
+  if (!row || !row.id || !row.is_epic || row.archived) return null;
+  return row;
+}
+
+function normalizeLabels(rawLabels, { isEpic } = {}) {
+  const labels = Array.isArray(rawLabels) ? rawLabels.map(String).map(s => s.trim()).filter(Boolean) : [];
+  if (isEpic && !labels.some(l => l.toLowerCase() === 'epic')) {
+    labels.push('epic');
+  }
+  return labels;
+}
 
 export async function onRequestPatch({ request, env, params }) {
   const auth = requireEmail(request, env);
@@ -30,6 +50,10 @@ export async function onRequestPatch({ request, env, params }) {
 
   const id = params.id;
   const body = await request.json().catch(() => ({}));
+
+  if (body.isEpic === true && body.epicId) {
+    return json({ error: 'epic_cannot_have_epic' }, { status: 400 });
+  }
 
   const updates = [];
   const binds = [];
@@ -55,7 +79,13 @@ export async function onRequestPatch({ request, env, params }) {
   }
 
   if (body.labels != null) {
-    const labels = body.labels ? JSON.stringify(Array.isArray(body.labels) ? body.labels : []) : null;
+    let isEpicForLabels = body.isEpic;
+    if (isEpicForLabels == null) {
+      const row = await env.DB.prepare('SELECT is_epic FROM cards WHERE id = ? LIMIT 1;').bind(id).first();
+      isEpicForLabels = Boolean(row?.is_epic);
+    }
+    const labelsArr = normalizeLabels(body.labels, { isEpic: isEpicForLabels });
+    const labels = labelsArr.length ? JSON.stringify(labelsArr) : null;
     updates.push('labels = ?');
     binds.push(labels);
   }
@@ -68,11 +98,47 @@ export async function onRequestPatch({ request, env, params }) {
 
   if (body.priority != null) {
     const priority = body.priority || null;
-    if (priority && !['low', 'medium', 'high', 'urgent'].includes(priority)) {
+    if (priority && !VALID_PRIORITY.has(priority)) {
       return json({ error: 'invalid_priority' }, { status: 400 });
     }
     updates.push('priority = ?');
     binds.push(priority);
+  }
+
+  if (body.isEpic != null) {
+    const isEpic = Boolean(body.isEpic);
+    updates.push('is_epic = ?');
+    binds.push(isEpic ? 1 : 0);
+
+    if (isEpic) {
+      // Epics cannot belong to another epic.
+      updates.push('epic_id = ?');
+      binds.push(null);
+
+      // Ensure epic label is present when promoting to epic.
+      if (body.labels == null) {
+        const row = await env.DB.prepare('SELECT labels FROM cards WHERE id = ? LIMIT 1;').bind(id).first();
+        const current = row?.labels ? JSON.parse(row.labels) : [];
+        const labelsArr = normalizeLabels(current, { isEpic: true });
+        updates.push('labels = ?');
+        binds.push(labelsArr.length ? JSON.stringify(labelsArr) : null);
+      }
+    }
+  }
+
+  if (body.epicId !== undefined) {
+    const epicId = body.epicId ? String(body.epicId) : null;
+    if (epicId && epicId === id) return json({ error: 'invalid_epic' }, { status: 400 });
+    if (epicId) {
+      const current = await env.DB.prepare('SELECT is_epic FROM cards WHERE id = ? LIMIT 1;').bind(id).first();
+      if (current?.is_epic) return json({ error: 'epic_cannot_have_epic' }, { status: 400 });
+    }
+    if (epicId) {
+      const epic = await resolveEpic(env, epicId);
+      if (!epic) return json({ error: 'invalid_epic' }, { status: 400 });
+    }
+    updates.push('epic_id = ?');
+    binds.push(epicId);
   }
 
   if (body.archived != null) {

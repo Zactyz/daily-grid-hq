@@ -14,6 +14,8 @@ export interface Card {
   dueDate?: number | null;
   archived?: boolean;
   priority?: 'low' | 'medium' | 'high' | 'urgent' | null;
+  isEpic?: boolean;
+  epicId?: string | null;
 }
 
 export interface CreateCardInput {
@@ -23,6 +25,8 @@ export interface CreateCardInput {
   priority?: 'low' | 'medium' | 'high' | 'urgent';
   labels?: string[];
   dueDate?: string; // ISO date string
+  isEpic?: boolean;
+  epicId?: string | null;
 }
 
 export interface UpdateCardInput {
@@ -33,6 +37,8 @@ export interface UpdateCardInput {
   priority?: 'low' | 'medium' | 'high' | 'urgent' | null;
   labels?: string[];
   dueDate?: string | null; // ISO date string or null
+  isEpic?: boolean;
+  epicId?: string | null;
 }
 
 export interface ApiResponse<T> {
@@ -77,10 +83,16 @@ export class KanbanApiClient {
     return data as T;
   }
 
-  async listCards(status?: string, includeArchived = false): Promise<Card[]> {
+  async listCards(
+    status?: string,
+    includeArchived = false,
+    options: { epicOnly?: boolean; epicId?: string } = {}
+  ): Promise<Card[]> {
     const params = new URLSearchParams();
     if (status) params.set('status', status);
     if (includeArchived) params.set('archived', 'true');
+    if (options.epicOnly) params.set('epic', 'true');
+    if (options.epicId) params.set('epicId', options.epicId);
     
     const query = params.toString();
     const path = `/api/cards${query ? `?${query}` : ''}`;
@@ -108,6 +120,8 @@ export class KanbanApiClient {
     if (input.priority) body.priority = input.priority;
     if (input.labels) body.labels = input.labels;
     if (input.dueDate) body.dueDate = input.dueDate;
+    if (input.isEpic !== undefined) body.isEpic = input.isEpic;
+    if (input.epicId !== undefined) body.epicId = input.epicId;
 
     return this.request(`/api/cards`, {
       method: 'POST',
@@ -126,6 +140,8 @@ export class KanbanApiClient {
     if (input.dueDate !== undefined) {
       body.dueDate = input.dueDate ? new Date(input.dueDate).getTime() : null;
     }
+    if (input.isEpic !== undefined) body.isEpic = input.isEpic;
+    if (input.epicId !== undefined) body.epicId = input.epicId;
 
     return this.request(`/api/cards/${input.id}`, {
       method: 'PATCH',
@@ -148,6 +164,11 @@ export class KanbanApiClient {
     byStatus: Record<string, number>;
     overdue: number;
     byPriority: Record<string, number>;
+    epics: {
+      total: number;
+      withChildren: number;
+      orphanChildren: number;
+    };
   }> {
     const cards = await this.listCards();
     
@@ -167,6 +188,10 @@ export class KanbanApiClient {
 
     let overdue = 0;
     const now = Date.now();
+    const epicIds = new Set(cards.filter(c => c.isEpic).map(c => c.id));
+    let epicWithChildren = 0;
+    let orphanChildren = 0;
+    const childCounts: Record<string, number> = {};
 
     for (const card of cards) {
       if (card.archived) continue;
@@ -180,13 +205,29 @@ export class KanbanApiClient {
       if (card.dueDate && card.dueDate < now) {
         overdue++;
       }
+
+      if (card.epicId) {
+        childCounts[card.epicId] = (childCounts[card.epicId] || 0) + 1;
+        if (!epicIds.has(card.epicId)) {
+          orphanChildren++;
+        }
+      }
     }
+
+    epicIds.forEach((id) => {
+      if (childCounts[id]) epicWithChildren++;
+    });
 
     return {
       total: cards.filter(c => !c.archived).length,
       byStatus,
       overdue,
       byPriority,
+      epics: {
+        total: epicIds.size,
+        withChildren: epicWithChildren,
+        orphanChildren,
+      },
     };
   }
 }

@@ -13,12 +13,15 @@ CREATE TABLE cards (
   labels TEXT, -- JSON array of label strings
   due_date INTEGER, -- Unix timestamp
   archived INTEGER DEFAULT 0, -- Soft delete (0 = false, 1 = true)
-  priority TEXT CHECK (priority IN ('low', 'medium', 'high', 'urgent'))
+  priority TEXT CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+  is_epic INTEGER DEFAULT 0, -- 1 = epic card, 0 = normal card
+  epic_id TEXT -- optional parent epic id
 );
 
 CREATE INDEX idx_cards_status_sort ON cards(status, sort);
 CREATE INDEX idx_cards_archived ON cards(archived);
 CREATE INDEX idx_cards_due_date ON cards(due_date);
+CREATE INDEX idx_cards_epic_id ON cards(epic_id);
 
 -- Friday status
 CREATE TABLE IF NOT EXISTS friday_status (

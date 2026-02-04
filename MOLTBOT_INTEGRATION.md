@@ -110,6 +110,33 @@ You can interact with your kanban board using natural language. Here are some ex
 - "Give me a summary of the board"
 - "How many cards are in each column?"
 
+## Epic Workflows (New)
+
+Epics are first-class cards with `isEpic = true`. Child cards reference their parent epic via `epicId`.
+
+### Epic Examples
+
+**Create an epic:**
+- "Create an epic called 'Daily Grid: New Game Mode' with high priority"
+
+**Add children to an epic:**
+- "Add a task 'Research similar games' to the epic Daily Grid: New Game Mode"
+- "Link card abc-123 to epic def-456"
+
+**List epic children:**
+- "Show me all cards in the epic Daily Grid: New Game Mode"
+
+### Suggested Multi‑Step Flow (Research → Plan → Implement → Check)
+
+1. Create an epic card and set the description to a short plan outline.
+2. Create child cards for each phase:
+   - `research` (discovery, competitor scan, constraints)
+   - `plan` (spec, milestones, risk list)
+   - `implement` (tasks or subtasks)
+   - `check` (tests, QA, regression, rollout)
+3. Use labels like `research`, `plan`, `implement`, `check` to track the phase.
+4. Keep the epic updated as milestones change; archive children when complete.
+
 ### Tool Reference
 
 The MCP server exposes the following tools:
@@ -121,6 +148,8 @@ List all kanban cards, optionally filtered by status.
 **Parameters:**
 - `status` (optional): Filter by status (`backlog`, `doing`, `blocked`, `done`)
 - `includeArchived` (optional): Include archived cards (default: `false`)
+- `epicOnly` (optional): Return only epic cards (default: `false`)
+- `epicId` (optional): Return only cards that belong to a specific epic
 
 **Example:**
 ```json
@@ -137,6 +166,20 @@ Create a new kanban card.
 **Parameters:**
 - `title` (required): Card title
 - `description` (optional): Card description
+- `status` (optional): Initial status (default: `backlog`)
+- `priority` (optional): Priority level (`low`, `medium`, `high`, `urgent`)
+- `labels` (optional): Array of label strings
+- `dueDate` (optional): Due date in ISO format (YYYY-MM-DD)
+- `isEpic` (optional): Create the card as an epic
+- `epicId` (optional): Parent epic id for this card
+
+#### `create_epic`
+
+Create a new epic card.
+
+**Parameters:**
+- `title` (required): Epic title
+- `description` (optional): Epic description
 - `status` (optional): Initial status (default: `backlog`)
 - `priority` (optional): Priority level (`low`, `medium`, `high`, `urgent`)
 - `labels` (optional): Array of label strings
@@ -166,6 +209,8 @@ Update an existing card. Only provide fields you want to change.
 - `priority` (optional): New priority (or `null` to remove)
 - `labels` (optional): New labels array
 - `dueDate` (optional): New due date (or `null` to remove)
+- `isEpic` (optional): Promote/demote the card to epic
+- `epicId` (optional): Set or clear the parent epic (or `null` to remove)
 
 **Example:**
 ```json
@@ -424,3 +469,32 @@ For issues specific to:
 5. Customize workflows for your team
 
 Happy kanban managing with AI!
+#### `list_epics`
+
+List all epic cards.
+
+**Parameters:**
+- `includeArchived` (optional): Include archived epics (default: `false`)
+
+#### `list_epic_children`
+
+List all cards that belong to a specific epic.
+
+**Parameters:**
+- `epicId` (required): Epic card id
+- `includeArchived` (optional): Include archived cards (default: `false`)
+
+#### `link_card_to_epic`
+
+Attach an existing card to a parent epic.
+
+**Parameters:**
+- `id` (required): Card id
+- `epicId` (required): Epic card id
+
+#### `unlink_card_from_epic`
+
+Remove a card from its parent epic.
+
+**Parameters:**
+- `id` (required): Card id
